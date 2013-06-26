@@ -1,4 +1,4 @@
-from tastypie.fields import ApiField
+from tastypie.fields import ApiField, ToOneField as TastyOneField
 
 class PrimaryKeyField(ApiField):
     def hydrate(self, bundle):
@@ -6,6 +6,13 @@ class PrimaryKeyField(ApiField):
             return None
         
         return super(DynamoKeyField, self).hydrate(bundle)
+
+
+class ToOneField(TastyOneField):
+
+    def dehydrate(self, bundle):
+        resource = self.get_related_resource(bundle.obj)
+        return resource.get_resource_uri(bundle)
 
 
 class HashKeyField(PrimaryKeyField):
