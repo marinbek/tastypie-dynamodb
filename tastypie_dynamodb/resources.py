@@ -161,12 +161,12 @@ class DynamoRangeDeclarativeMetaclass(DynamoDeclarativeMetaclass):
             setattr(new_class._meta, 'range_key_condition', EQ)
 
         #ensure a proper delimeter
-        if not hasattr(new_class._meta, 'primary_key_delimeter'):
-            setattr(new_class._meta, 'primary_key_delimeter', ':')
+        if not hasattr(new_class._meta, 'primary_key_delimiter'):
+            setattr(new_class._meta, 'primary_key_delimiter', '/')
 
         #invalid delimeter
-        elif getattr(new_class._meta, 'primary_key_delimeter') in (';', '&', '?'):
-            raise Exception('"%" is not a valid delimeter.' % getattr(new_class._meta, 'primary_key_delimeter'))
+        elif getattr(new_class._meta, 'primary_key_delimiter') in (';', '&', '?'):
+            raise Exception('"%" is not a valid delimeter.' % getattr(new_class._meta, 'primary_key_delimiter'))
 
         #if the user is asking us to auto-build their primary keys
         if getattr(new_class._meta, 'build_primary_keys', False) == True:
@@ -194,7 +194,7 @@ class DynamoHashRangeResource(DynamoHashResource):
         return super(DynamoHashRangeResource, self).dispatch_detail(request, **k)
 
 
-    prepend_urls = lambda self: [url(r'^(?P<resource_name>%s)/(?P<hash_key>.+)%s(?P<range_key>.+)/$' % (self._meta.resource_name, self._meta.primary_key_delimeter), self.wrap_view('dispatch_detail'), name='api_dispatch_detail')]
+    prepend_urls = lambda self: [url(r'^(?P<resource_name>%s)/(?P<hash_key>.+)%s(?P<range_key>.+)/$' % (self._meta.resource_name, self._meta.primary_key_delimiter), self.wrap_view('dispatch_detail'), name='api_dispatch_detail')]
 
 
     def resource_uri_kwargs(self, bundle):
@@ -243,7 +243,7 @@ class DynamoHashRangeResource(DynamoHashResource):
             
             #this class should be instantiated with two values..
             if issubclass(range_key_condition, ConditionTwoArgs):
-                range_values['v1'], range_values['v2'] = [self._range_key_type(i) for i in range_key.split(self._meta.primary_key_delimeter)]
+                range_values['v1'], range_values['v2'] = [self._range_key_type(i) for i in range_key.split(self._meta.primary_key_delimiter)]
             else:
                 #setup the value that the class will be instantiated with
                 range_values['v1'] = self._range_key_type(range_key)
