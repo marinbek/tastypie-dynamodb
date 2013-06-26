@@ -131,7 +131,7 @@ class DynamoHashResource(Resource):
         bundles = []
         for item in items:
             obj = DynamoObject(item)
-            bundle = self.build_bundle(obj=obj, request=request)                                                                                                                  
+            bundle = self.build_bundle(obj=obj, request=request)
             bundles.append(self.full_dehydrate(bundle))
 
         to_be_serialized[self._meta.collection_name] = bundles
@@ -196,13 +196,19 @@ class DynamoHashRangeResource(DynamoHashResource):
 
     prepend_urls = lambda self: [url(r'^(?P<resource_name>%s)/(?P<hash_key>.+)%s(?P<range_key>.+)/$' % (self._meta.resource_name, self._meta.primary_key_delimeter), self.wrap_view('dispatch_detail'), name='api_dispatch_detail')]
 
-    def get_resource_uri_kwargs(self, bundle):
-        resource_kwargs = super(DynamoHashRangeResource, self).get_resource_uri_kwargs(bundle)
-        resource_kwargs['range_key'] = str(getattr(bundle.obj, self._meta.table.schema.range_key_name))
-        return resource_kwargs
+
+    def resource_uri_kwargs(self, bundle):
+        kwargs = { 'api_name': self._meta.api_name,
+                 'resource_name': self._meta.resource_name }
+        if bundle:
+            kwargs['hash_key'] = str(getattr(bundle.obj, self._meta.table.schema.hash_key_name))
+            kwargs['range_key'] = str(getattr(bundle.obj, self._meta.table.schema.range_key_name))
 
 
-    def obj_get_list(self, request=None, **k):
+        return kwargs
+
+
+    def obj_get_list11(self, request=None, **k):
         schema = self._meta.table.schema
     
         #work out the hash key
