@@ -20,10 +20,11 @@ class ToOneField(TastyOneField):
     def __init__(self, to, attribute, related_name=None, default=NOT_PROVIDED,
                  null=False, blank=False, readonly=False, full=False,
                  unique=False, help_text=None, use_in='all', full_list=True, full_detail=True,
-                 separator=None, hashkey_index=0):
+                 separator=None, hashkey_index=0, rangekey_index=1):
 
         self.separator = separator
         self.hashkey_index = hashkey_index
+        self.rangekey_index = rangekey_index
 
         super(ToOneField, self).__init__(
             to, attribute, related_name=related_name, default=default,
@@ -42,6 +43,8 @@ class ToOneField(TastyOneField):
         if self.separator:
             val = getattr(bundle.obj, self.attribute).split(self.separator)
             kwargs['hash_key'] = val[self.hashkey_index]
+            if resource._meta.table.schema.range_key_name:
+                kwargs['range_key'] = val[self.rangekey_index]
             
         try:
             return resource._build_reverse_url(url_name, kwargs=kwargs)
