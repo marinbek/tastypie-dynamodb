@@ -15,12 +15,11 @@ class ToOneDjangoField(TastyOneField):
     def __init__(self, to, model, model_field, dynamo_field, related_name=None, default=NOT_PROVIDED,
                  null=False, blank=False, readonly=False, full=False,
                  unique=False, help_text=None, use_in='all', full_list=True, full_detail=True,
-                 separator=None, hashkey_index=0, rangekey_index=1):
+                 separator=None, value_index=0):
 
         attribute = model_field
         self.separator = separator
-        self.hashkey_index = hashkey_index
-        self.rangekey_index = rangekey_index
+        self.value_index = value_index
         self.model = model
         self.dynamo_field = dynamo_field
         self.model_field = model_field
@@ -39,7 +38,11 @@ class ToOneDjangoField(TastyOneField):
 
 
     def dehydrate(self, bundle):
-        exec("obj = self.model_class.objects.get(%s='%s')" % (self.model_field, getattr(bundle.obj, self.dynamo_field)))
+        value = getattr(bundle.obj, self.dynamo_field)
+        if self.separator:
+            value = value.split(self.separator)[self.value_index]
+
+        exec("obj = self.model_class.objects.get(%s='%s')" % (self.model_field, value))
         resource = self.get_related_resource(bundle.obj)
         bundle2 = resource.build_bundle(obj)
         kwargs = resource.resource_uri_kwargs(bundle2)
