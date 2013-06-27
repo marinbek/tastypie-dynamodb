@@ -1,5 +1,6 @@
 from tastypie.fields import ApiField, ToOneField as TastyOneField, NOT_PROVIDED
 from django.core.urlresolvers import NoReverseMatch
+from django.utils import importlib
 
 class PrimaryKeyField(ApiField):
     def hydrate(self, bundle):
@@ -7,6 +8,48 @@ class PrimaryKeyField(ApiField):
             return None
         
         return super(DynamoKeyField, self).hydrate(bundle)
+
+
+class ToOneDjangoField(TastyOneField):
+
+    def __init__(self, to, model, model_field, dynamo_field, related_name=None, default=NOT_PROVIDED,
+                 null=False, blank=False, readonly=False, full=False,
+                 unique=False, help_text=None, use_in='all', full_list=True, full_detail=True,
+                 separator=None, hashkey_index=0, rangekey_index=1):
+
+        attribute = model_field
+        self.separator = separator
+        self.hashkey_index = hashkey_index
+        self.rangekey_index = rangekey_index
+        self.model = model
+        self.dynamo_field = dynamo_field
+        self.model_field = model_field
+
+        module_bits = model.split('.')
+        module_path, class_name = '.'.join(module_bits[:-1]), module_bits[-1]
+        module = importlib.import_module(module_path)
+        self.model_class = getattr(module, class_name, None)
+
+        super(ToOneDjangoField, self).__init__(
+            to, attribute, related_name=related_name, default=default,
+            null=null, blank=blank, readonly=readonly, full=full,
+            unique=unique, help_text=help_text, use_in=use_in,
+            full_list=full_list, full_detail=full_detail
+        )
+
+
+    def dehydrate(self, bundle):
+        exec("obj = self.model_class.objects.get(%s='%s')" % (self.model_field, getattr(bundle.obj, self.dynamo_field)))
+        resource = self.get_related_resource(bundle.obj)
+        bundle2 = resource.build_bundle(obj)
+        kwargs = resource.resource_uri_kwargs(bundle2)
+
+        url_name = 'api_dispatch_detail'
+
+        try:
+            return resource._build_reverse_url(url_name, kwargs=kwargs)
+        except NoReverseMatch:
+            return ''
 
 
 """
