@@ -1,6 +1,7 @@
 from django.conf.urls import url
 from django.http import Http404
 
+import boto.dynamodb
 from boto.dynamodb.condition import EQ, ConditionTwoArgs
 from boto.dynamodb.exceptions import DynamoDBKeyNotFoundError
 
@@ -119,6 +120,34 @@ class DynamoHashResource(Resource):
 
     def rollback(self):
         pass
+
+    def get_uri_list(self, request, attr_filter={}):
+        """ Gets a list of resource URIs of all objects in this table"""
+        if self._meta.table.schema.range_key_name:
+            attrs = [self._meta.table.schema.range_key_name,
+                     self._meta.table.schema.hash_key_name]
+        else:
+            attrs = [self._meta.table.schema.hash_key_name]
+            
+        dynamo_filter = {}
+        for key, val in attr_filter.iteritems():
+            dynamo_filter[key] = boto.dynamodb.condition.EQ(val)
+
+        # TODO do a query if filter HASH_KEY available
+        _items = self._meta.table.scan(scan_filter=dynamo_filter,
+                                       attributes_to_get=attrs)
+
+        def hash_uri(item):
+            return '%s%s/' % (self.get_resource_uri(), item[self._meta.table.schema.hash_key_name])
+        def range_uri(item):
+            return '%s%s/%s/' % (self.get_resource_uri(), item[self._meta.table.schema.hash_key_name], item[self._meta.table.schema.range_key_name])
+
+        if self._meta.table.schema.range_key_name:
+            items = [range_uri(it) for it in _items]
+        else:
+            items = [hash_uri(it) for it in _items]
+
+        return items
 
     def get_list(self, request, **kwargs):
         _items = self._meta.table.scan()
