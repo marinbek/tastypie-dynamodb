@@ -150,6 +150,7 @@ class DynamoHashResource(Resource):
         return items
 
     def get_list(self, request, **kwargs):
+
         _items = self._meta.table.scan()
         items = [it for it in _items]
 
@@ -158,7 +159,7 @@ class DynamoHashResource(Resource):
         to_be_serialized = paginator.page()
 
         bundles = []
-        for item in items:
+        for item in to_be_serialized['objects']:
             obj = DynamoObject(item)
             bundle = self.build_bundle(obj=obj, request=request)
             bundles.append(self.full_dehydrate(bundle))
