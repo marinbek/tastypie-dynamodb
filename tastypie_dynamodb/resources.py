@@ -151,7 +151,21 @@ class DynamoHashResource(Resource):
 
     def get_list(self, request, **kwargs):
 
-        _items = self._meta.table.scan()
+        dynamo_filter = {}
+
+        # Try to filter by hash_key, if provided
+        hkey = self._meta.table.schema.hash_key_name
+        if hkey in request.GET:
+            dynamo_filter[hkey] = boto.dynamodb.condition.EQ(request.GET[hkey])
+
+        if self._meta.table.schema.range_key_name:
+            # a 'range' table, let's try filtering
+            rkey = self._meta.table.schema.range_key_name
+            if rkey in request.GET:
+                dynamo_filter[rkey] = boto.dynamodb.condition.EQ(request.GET[rkey])
+
+        _items = self._meta.table.scan(scan_filter=dynamo_filter)
+
         items = [it for it in _items]
 
         paginator = self._meta.paginator_class(request.GET, items, resource_uri=self.get_resource_uri(), limit=self._meta.limit, max_limit=self._meta.max_limit,
