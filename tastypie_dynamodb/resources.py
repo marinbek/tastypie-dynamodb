@@ -121,6 +121,19 @@ class DynamoHashResource(Resource):
     def rollback(self):
         pass
 
+    def get_count(self, attr_filter={}):
+        if self._meta.table.schema.range_key_name:
+            attrs = [self._meta.table.schema.range_key_name,
+                     self._meta.table.schema.hash_key_name]
+        else:
+            attrs = [self._meta.table.schema.hash_key_name]
+            
+        dynamo_filter = {}
+        for key, val in attr_filter.iteritems():
+            dynamo_filter[key] = boto.dynamodb.condition.EQ(val)
+        _items = self._meta.table.scan(scan_filter=dynamo_filter,
+                                       count=True)
+
     def get_uri_list(self, request, attr_filter={}):
         """ Gets a list of resource URIs of all objects in this table"""
         if self._meta.table.schema.range_key_name:
@@ -158,15 +171,26 @@ class DynamoHashResource(Resource):
         if hkey in request.GET:
             dynamo_filter[hkey] = boto.dynamodb.condition.EQ(request.GET[hkey])
 
+        esk = []
+        if 'offset_hash' in request.GET:
+            esk.append(request.GET['offset_hash'])
+            
         if self._meta.table.schema.range_key_name:
+            if 'offset_hash' in request.GET and 'offset_range' in request.GET:
+                esk.append(request.GET['offset_range'])
+
             # a 'range' table, let's try filtering
             rkey = self._meta.table.schema.range_key_name
             if rkey in request.GET:
                 dynamo_filter[rkey] = boto.dynamodb.condition.EQ(request.GET[rkey])
 
-        _items = self._meta.table.scan(scan_filter=dynamo_filter)
+        limit = 20 if 'limit' not in request.GET else int(request.GET['limit'])
 
-        items = [it for it in _items]
+        _items = self._meta.table.scan(scan_filter=dynamo_filter,
+                                       max_results=limit,
+                                       exclusive_start_key=esk)
+
+        items = _items.next_response()['Items']
 
         paginator = self._meta.paginator_class(request.GET, items, resource_uri=self.get_resource_uri(), limit=self._meta.limit, max_limit=self._meta.max_limit,
                         collection_name=self._meta.collection_name)
@@ -177,6 +201,18 @@ class DynamoHashResource(Resource):
             obj = DynamoObject(item)
             bundle = self.build_bundle(obj=obj, request=request)
             bundles.append(self.full_dehydrate(bundle))
+
+        # generate 'next' URI using last_evaluated_key
+        next_uri = '/api/%s/%s/?offset_hash=%s' % (kwargs['api_name'], kwargs['resource_name'], _items.last_evaluated_key[0])
+        if self._meta.table.schema.range_key_name:
+            next_uri += '&offset_range=%s' % _items.last_evaluated_key[1]
+
+        if 'limit' in request.GET:
+            next_uri += '&limit=%s' % request.GET['limit']
+        if 'format' in request.GET:
+            next_uri += '&format=%s' % request.GET['format']
+
+        to_be_serialized['meta']['next'] = next_uri
 
         to_be_serialized[self._meta.collection_name] = bundles
         to_be_serialized = self.alter_list_data_to_serialize(request, to_be_serialized)
