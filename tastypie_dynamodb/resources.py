@@ -203,14 +203,17 @@ class DynamoHashResource(Resource):
             bundles.append(self.full_dehydrate(bundle))
 
         # generate 'next' URI using last_evaluated_key
-        next_uri = '/api/%s/%s/?offset_hash=%s' % (kwargs['api_name'], kwargs['resource_name'], _items.last_evaluated_key[0])
-        if self._meta.table.schema.range_key_name:
-            next_uri += '&offset_range=%s' % _items.last_evaluated_key[1]
+        if not _items.last_evaluated_key:
+            next_uri = None
+        else:
+            next_uri = '/api/%s/%s/?offset_hash=%s' % (kwargs['api_name'], kwargs['resource_name'], _items.last_evaluated_key[0])
+            if self._meta.table.schema.range_key_name:
+                next_uri += '&offset_range=%s' % _items.last_evaluated_key[1]
 
-        if 'limit' in request.GET:
-            next_uri += '&limit=%s' % request.GET['limit']
-        if 'format' in request.GET:
-            next_uri += '&format=%s' % request.GET['format']
+            if 'limit' in request.GET:
+                next_uri += '&limit=%s' % request.GET['limit']
+            if 'format' in request.GET:
+                next_uri += '&format=%s' % request.GET['format']
 
         to_be_serialized['meta']['next'] = next_uri
 
