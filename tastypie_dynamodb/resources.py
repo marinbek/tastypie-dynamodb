@@ -190,7 +190,7 @@ class DynamoHashResource(Resource):
                                        max_results=limit,
                                        exclusive_start_key=esk)
 
-        items = _items.next_response()['Items']
+        items = [it for it in _items]
 
         paginator = self._meta.paginator_class(request.GET, items, resource_uri=self.get_resource_uri(), limit=self._meta.limit, max_limit=self._meta.max_limit,
                         collection_name=self._meta.collection_name)
