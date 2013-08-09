@@ -186,9 +186,20 @@ class DynamoHashResource(Resource):
 
         limit = 20 if 'limit' not in request.GET else int(request.GET['limit'])
 
-        _items = self._meta.table.scan(scan_filter=dynamo_filter,
-                                       max_results=limit,
-                                       exclusive_start_key=esk)
+        if hkey in request.GET:
+            # do a query, we have hash key filter
+            if self._meta.table.schema.range_key_name and rkey and rkey in request.GET:
+                rkc = dynamo_filter[rkey]
+            else:
+                rkc = None
+            _items = self._meta.table.query(request.GET[hkey],
+                                            range_key_condition=rkc,
+                                            max_results=limit,
+                                            exclusive_start_key=esk)
+        else:
+            _items = self._meta.table.scan(scan_filter=dynamo_filter,
+                                           max_results=limit,
+                                           exclusive_start_key=esk)
 
         items = [it for it in _items]
 
