@@ -171,6 +171,9 @@ class DynamoHashResource(Resource):
         if hkey in request.GET:
             dynamo_filter[hkey] = boto.dynamodb.condition.EQ(request.GET[hkey])
 
+        # should we add hash_key filter to NEXT URL
+        hkey_in_next = hkey in request.GET
+
         esk = []
         if 'offset_hash' in request.GET:
             esk.append(request.GET['offset_hash'])
@@ -218,6 +221,11 @@ class DynamoHashResource(Resource):
             next_uri = None
         else:
             next_uri = '/api/%s/%s/?offset_hash=%s' % (kwargs['api_name'], kwargs['resource_name'], _items.last_evaluated_key[0])
+
+            # append hash_key filter to NEXT URL if necessary
+            if hkey_in_next:
+                next_uri += '&%s=%s' % (hkey, request.GET[hkey])
+
             if self._meta.table.schema.range_key_name:
                 next_uri += '&offset_range=%s' % _items.last_evaluated_key[1]
 
