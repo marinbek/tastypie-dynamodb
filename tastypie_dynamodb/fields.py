@@ -37,7 +37,7 @@ class ToOneDjangoField(TastyOneField):
         )
 
 
-    def dehydrate(self, bundle):
+    def dehydrate(self, bundle, for_list=True):
         value = getattr(bundle.obj, self.dynamo_field)
         if self.separator:
             value = value.split(self.separator)[self.value_index]
@@ -80,7 +80,7 @@ class ToOneField(TastyOneField):
         )
 
 
-    def dehydrate(self, bundle):
+    def dehydrate(self, bundle, for_list=True):
         resource = self.get_related_resource(bundle.obj)
         kwargs = resource.resource_uri_kwargs(bundle)
 
