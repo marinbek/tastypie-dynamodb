@@ -52,6 +52,9 @@ class DynamoHashResource(Resource):
     def dispatch_detail(self, request, **k):
         """Ensure that the hash_key is received in the correct type"""
         k['hash_key'] = self._hash_key_type(k['hash_key'])
+
+        if 'range_key' in k and k['range_key'][-1] == '*':
+            return self.get_list(request, **k)
         return super(DynamoHashResource, self).dispatch_detail(request, **k)
 
     def resource_uri_kwargs(self, bundle):
@@ -83,7 +86,6 @@ class DynamoHashResource(Resource):
 
         #if there are pks, this is an update, else it's new
         item.put() if primary_keys else item.save()
-
 
         #wrap the item and store it for return
         bundle.obj = DynamoObject(item)
@@ -166,36 +168,49 @@ class DynamoHashResource(Resource):
 
         dynamo_filter = {}
 
-        # Try to filter by hash_key, if provided
-        hkey = self._meta.table.schema.hash_key_name
-        if hkey in request.GET:
-            dynamo_filter[hkey] = boto.dynamodb.condition.EQ(request.GET[hkey])
-
         # should we add hash_key filter to NEXT URL
-        hkey_in_next = hkey in request.GET
+        hkey_in_next = False
+        hash_key_value = None
 
+        # Try to filter by hash_key, if provided
+        # Or filter by kwargs['hash_key'] - this happens when we get a wildcard range key URI request
+        hkey = self._meta.table.schema.hash_key_name
+        if hkey in request.GET or 'hash_key' in kwargs:
+            hkey_in_next = True 
+            value = request.GET.get(hkey, kwargs['hash_key'])
+            dynamo_filter[hkey] = boto.dynamodb.condition.EQ(value)
+            hash_key_value = request.GET.get(hkey, kwargs['hash_key'])
+
+        # Exclusive start key - when offset is required
         esk = []
         if 'offset_hash' in request.GET:
             esk.append(request.GET['offset_hash'])
-            
+
         if self._meta.table.schema.range_key_name:
+            # We are dealing with a range table!
             if 'offset_hash' in request.GET and 'offset_range' in request.GET:
                 esk.append(request.GET['offset_range'])
 
             # a 'range' table, let's try filtering
             rkey = self._meta.table.schema.range_key_name
-            if rkey in request.GET:
-                dynamo_filter[rkey] = boto.dynamodb.condition.EQ(request.GET[rkey])
+            if rkey in request.GET or 'range_key' in kwargs:
+                value = request.GET.get(rkey, kwargs['range_key'])
+                if value != '*':
+                    if value[-1] == '*':
+                        # wildcard filer, we need begins_with
+                        dynamo_filter[rkey] = boto.dynamodb.condition.BEGINS_WITH(value[:-1])
+                    else:
+                        dynamo_filter[rkey] = boto.dynamodb.condition.EQ(value)
 
         limit = 20 if 'limit' not in request.GET else int(request.GET['limit'])
 
-        if hkey in request.GET:
+        if hash_key_value:
             # do a query, we have hash key filter
-            if self._meta.table.schema.range_key_name and rkey and rkey in request.GET:
+            if self._meta.table.schema.range_key_name and rkey in dynamo_filter:
                 rkc = dynamo_filter[rkey]
             else:
                 rkc = None
-            _items = self._meta.table.query(request.GET[hkey],
+            _items = self._meta.table.query(hash_key_value,
                                             range_key_condition=rkc,
                                             max_results=limit,
                                             exclusive_start_key=esk)
@@ -224,7 +239,7 @@ class DynamoHashResource(Resource):
 
             # append hash_key filter to NEXT URL if necessary
             if hkey_in_next:
-                next_uri += '&%s=%s' % (hkey, request.GET[hkey])
+                next_uri += '&%s=%s' % (hkey, hash_key_value)
 
             if self._meta.table.schema.range_key_name:
                 next_uri += '&offset_range=%s' % _items.last_evaluated_key[1]
@@ -296,7 +311,9 @@ class DynamoHashRangeResource(DynamoHashResource):
         return super(DynamoHashRangeResource, self).dispatch_detail(request, **k)
 
 
-    prepend_urls = lambda self: [url(r'^(?P<resource_name>%s)/(?P<hash_key>.+)%s(?P<range_key>.+)/$' % (self._meta.resource_name, self._meta.primary_key_delimiter), self.wrap_view('dispatch_detail'), name='api_dispatch_detail')]
+    prepend_urls = lambda self: [
+    url(r'^(?P<resource_name>%s)/(?P<hash_key>.+)%s(?P<range_key>.+)/$' % (self._meta.resource_name, self._meta.primary_key_delimiter), self.wrap_view('dispatch_detail'), name='api_dispatch_detail'),
+        ]
 
 
     def resource_uri_kwargs(self, bundle):
@@ -308,57 +325,3 @@ class DynamoHashRangeResource(DynamoHashResource):
 
 
         return kwargs
-
-
-    def obj_get_list11(self, request=None, **k):
-        schema = self._meta.table.schema
-    
-        #work out the hash key
-        hash_key = request.GET.get(schema.hash_key_name, None)
-        
-        if not hash_key:
-            raise Http404
-    
-        #get initial params
-        params = {
-            'hash_key': self._hash_key_type(hash_key),
-            'request_limit': self._meta.limit,
-            'consistent_read': self._meta.consistent_read,
-            'scan_index_forward': self._meta.scan_index_forward,
-        }
-        
-        
-        #see if there is a range key in the get request (which will override the default, if there was any)
-        range_key = request.GET.get(schema.range_key_name, None)
-        
-        #if a range key value was specified, prepare
-        if range_key:
-            #get the range key condition
-            range_key_condition = self._meta.range_key_condition
-
-            #this is an instance, with default values we need to override.  convert back to class for re-instantiation.
-            if not inspect.isclass(range_key_condition):
-                range_key_condition = range_key_condition.__class__
-        
-            
-            range_values = {}
-            
-            #this class should be instantiated with two values..
-            if issubclass(range_key_condition, ConditionTwoArgs):
-                range_values['v1'], range_values['v2'] = [self._range_key_type(i) for i in range_key.split(self._meta.primary_key_delimiter)]
-            else:
-                #setup the value that the class will be instantiated with
-                range_values['v1'] = self._range_key_type(range_key)
-            
-            #instantiate the range condition class
-            range_key_condition = range_key_condition(**range_values)
-            
-            #drop in the condition
-            params['range_key_condition'] = range_key_condition
-
-
-        #perform the query
-        results = self._meta.table.query(**params)
-
-        #return the results
-        return [DynamoObject(obj) for obj in results]
