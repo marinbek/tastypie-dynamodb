@@ -177,9 +177,9 @@ class DynamoHashResource(Resource):
         hkey = self._meta.table.schema.hash_key_name
         if hkey in request.GET or 'hash_key' in kwargs:
             hkey_in_next = True 
-            value = request.GET.get(hkey, kwargs['hash_key'])
+            value = request.GET.get(hkey, kwargs.get('hash_key', None))
             dynamo_filter[hkey] = boto.dynamodb.condition.EQ(value)
-            hash_key_value = request.GET.get(hkey, kwargs['hash_key'])
+            hash_key_value = request.GET.get(hkey, kwargs.get('hash_key', None))
 
         # Exclusive start key - when offset is required
         esk = []
