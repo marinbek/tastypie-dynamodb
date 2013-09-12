@@ -1,6 +1,10 @@
 from django.conf.urls import url
 from django.http import Http404
 
+from tastypie.exceptions import NotFound
+from django.core.exceptions import MultipleObjectsReturned
+from tastypie import http
+from tastypie.utils import dict_strip_unicode_keys
 import boto.dynamodb
 from boto.dynamodb.condition import EQ, ConditionTwoArgs
 from boto.dynamodb.exceptions import DynamoDBKeyNotFoundError
@@ -67,7 +71,7 @@ class DynamoHashResource(Resource):
 
     prepend_urls = lambda self: [url(r'^(?P<resource_name>%s)/(?P<hash_key>.+)/$' % self._meta.resource_name, self.wrap_view('dispatch_detail'), name='api_dispatch_detail')]
 
-    def _dynamo_update_or_insert(self, bundle, primary_keys=None):
+    def _dynamo_update_or_insert(self, bundle, primary_keys=None, force_put=False):
         primary_keys = primary_keys or {}
 
         bundle = self.full_hydrate(bundle)
@@ -83,25 +87,24 @@ class DynamoHashResource(Resource):
             
             item[key] = val
         
-
         #if there are pks, this is an update, else it's new
-        item.put() if primary_keys else item.save()
+        if not primary_keys or force_put:
+            item.put()
+        else:
+            item.save()
 
         #wrap the item and store it for return
         bundle.obj = DynamoObject(item)
         
         return bundle
 
-
     def obj_update(self, bundle, request=None, **k):
         """Issues update command to dynamo, which will create if doesn't exist."""
-        return self._dynamo_update_or_insert(bundle, primary_keys=k)
-
+        return self._dynamo_update_or_insert(bundle, primary_keys=k, force_put=True)
 
     def obj_create(self, bundle, request=None, **k):
         """Creates an object in Dynamo"""
         return self._dynamo_update_or_insert(bundle)
-
 
     def obj_get(self, bundle, request=None, **k):
         """Gets an object in Dynamo"""
@@ -112,13 +115,36 @@ class DynamoHashResource(Resource):
             
         return DynamoObject(item)
 
-
-    def obj_delete(self, request=None, **k):
+    def obj_delete(self, bundle, **k):
         """Deletes an object in Dynamo"""
     
         item = self._meta.table.new_item(**k)
         item.delete()
 
+    def patch_detail(self, request, **kwargs):
+        deserialized = self.deserialize(request, request.body, format=request.META.get('CONTENT_TYPE', 'application/json'))
+        deserialized = self.alter_deserialized_detail_data(request, deserialized)
+        bundle = self.build_bundle(data=dict_strip_unicode_keys(deserialized), request=request)
+
+        try:
+            updated_bundle = self._dynamo_update_or_insert(bundle, primary_keys=self.remove_api_resource_names(kwargs))
+
+            if not self._meta.always_return_data:
+                return http.HttpNoContent()
+            else:
+                updated_bundle = self.full_dehydrate(updated_bundle)
+                updated_bundle = self.alter_detail_data_to_serialize(request, updated_bundle)
+                return self.create_response(request, updated_bundle)
+        except (NotFound, MultipleObjectsReturned):
+            updated_bundle = self.obj_create(bundle=bundle, **self.remove_api_resource_names(kwargs))
+            location = self.get_resource_uri(updated_bundle)
+
+            if not self._meta.always_return_data:
+                return http.HttpCreated(location=location)
+            else:
+                updated_bundle = self.full_dehydrate(updated_bundle)
+                updated_bundle = self.alter_detail_data_to_serialize(request, updated_bundle)
+                return self.create_response(request, updated_bundle, response_class=http.HttpCreated, location=location)
 
     def rollback(self):
         pass

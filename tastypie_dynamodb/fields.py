@@ -7,7 +7,7 @@ class PrimaryKeyField(ApiField):
         if bundle.request.method == 'PUT':
             return None
         
-        return super(DynamoKeyField, self).hydrate(bundle)
+        return super(PrimaryKeyField, self).hydrate(bundle)
 
 
 class ToOneDjangoField(TastyOneField):
