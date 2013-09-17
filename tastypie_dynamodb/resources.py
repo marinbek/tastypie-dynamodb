@@ -69,7 +69,10 @@ class DynamoHashResource(Resource):
 
         return kwargs
 
-    prepend_urls = lambda self: [url(r'^(?P<resource_name>%s)/(?P<hash_key>.+)/$' % self._meta.resource_name, self.wrap_view('dispatch_detail'), name='api_dispatch_detail')]
+    def prepend_urls(self):
+        return [
+            url(r'^(?P<resource_name>%s)/(?P<hash_key>.+)/$' % self._meta.resource_name, self.wrap_view('dispatch_detail'), name='api_dispatch_detail'),
+        ]
 
     def _dynamo_update_or_insert(self, bundle, primary_keys=None, force_put=False):
         primary_keys = primary_keys or {}
@@ -336,11 +339,10 @@ class DynamoHashRangeResource(DynamoHashResource):
         k['range_key'] = self._range_key_type(k['range_key'])
         return super(DynamoHashRangeResource, self).dispatch_detail(request, **k)
 
-
-    prepend_urls = lambda self: [
-    url(r'^(?P<resource_name>%s)/(?P<hash_key>.+)%s(?P<range_key>.+)/$' % (self._meta.resource_name, self._meta.primary_key_delimiter), self.wrap_view('dispatch_detail'), name='api_dispatch_detail'),
+    def prepend_urls(self):
+        return [
+            url(r'^(?P<resource_name>%s)/(?P<hash_key>.+)%s(?P<range_key>.+)/$' % (self._meta.resource_name, self._meta.primary_key_delimiter), self.wrap_view('dispatch_detail'), name='api_dispatch_detail'),
         ]
-
 
     def resource_uri_kwargs(self, bundle):
         kwargs = { 'api_name': self._meta.api_name,
