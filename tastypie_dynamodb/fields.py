@@ -42,7 +42,11 @@ class ToOneDjangoField(TastyOneField):
         if self.separator:
             value = value.split(self.separator)[self.value_index]
 
-        exec("obj = self.model_class.objects.get(%s='%s')" % (self.model_field, value))
+        try:
+            exec("obj = self.model_class.objects.get(%s='%s')" % (self.model_field, value))
+        except self.model_class.DoesNotExist:
+            return None
+
         resource = self.get_related_resource(bundle.obj)
         bundle2 = resource.build_bundle(obj)
         kwargs = resource.resource_uri_kwargs(bundle2)
