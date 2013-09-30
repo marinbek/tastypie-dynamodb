@@ -125,3 +125,11 @@ class NumericRangeKeyField(NumberMixin, RangeKeyField):
 
 class StringRangeKeyField(StringMixin, RangeKeyField):
     pass
+
+class DynamoListField(ApiField):
+    
+    def convert(self, value):
+        if value is None:
+            return None
+
+        return [val for val in value]
