@@ -57,7 +57,7 @@ class DynamoHashResource(Resource):
         """Ensure that the hash_key is received in the correct type"""
         k['hash_key'] = self._hash_key_type(k['hash_key'])
 
-        if 'range_key' in k and k['range_key'][-1] == '*':
+        if 'range_key' in k and type(k['range_key']) is str and k['range_key'][-1] == '*':
             return self.get_list(request, **k)
         return super(DynamoHashResource, self).dispatch_detail(request, **k)
 
