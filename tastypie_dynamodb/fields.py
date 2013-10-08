@@ -39,6 +39,9 @@ class ToOneDjangoField(TastyOneField):
 
     def dehydrate(self, bundle, for_list=True):
         value = getattr(bundle.obj, self.dynamo_field)
+        if not value:
+            return None
+
         if self.separator:
             value = value.split(self.separator)[self.value_index]
 
@@ -70,11 +73,12 @@ class ToOneField(TastyOneField):
     def __init__(self, to, attribute, related_name=None, default=NOT_PROVIDED,
                  null=False, blank=False, readonly=False, full=False,
                  unique=False, help_text=None, use_in='all', full_list=True, full_detail=True,
-                 separator=None, hashkey_index=0, rangekey_index=1):
+                 separator=None, hashkey_index=0, rangekey_index=1, aliases=None):
 
         self.separator = separator
         self.hashkey_index = hashkey_index
         self.rangekey_index = rangekey_index
+        self.aliases = aliases
 
         super(ToOneField, self).__init__(
             to, attribute, related_name=related_name, default=default,
@@ -85,6 +89,10 @@ class ToOneField(TastyOneField):
 
 
     def dehydrate(self, bundle, for_list=True):
+        if self.aliases:
+            for dest, src in self.aliases.iteritems():
+                setattr(bundle.obj, dest, getattr(bundle.obj, src))
+
         resource = self.get_related_resource(bundle.obj)
         kwargs = resource.resource_uri_kwargs(bundle)
 
