@@ -214,11 +214,16 @@ class DynamoHashResource(Resource):
         esk = []
         if 'offset_hash' in request.GET:
             esk.append(request.GET['offset_hash'])
+            if self._meta.table.schema.hash_key_type == 'N':
+                esk[0] = int(esk[0])
 
         if self._meta.table.schema.range_key_name:
             # We are dealing with a range table!
             if 'offset_hash' in request.GET and 'offset_range' in request.GET:
-                esk.append(request.GET['offset_range'])
+                offset_hash = request.GET['offset_range']
+                if self._meta.table.schema.range_key_type == 'N':
+                    offset_hash = int(offset_hash)
+                esk.append(offset_hash)
 
             # a 'range' table, let's try filtering
             rkey = self._meta.table.schema.range_key_name
