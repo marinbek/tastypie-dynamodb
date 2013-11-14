@@ -6,7 +6,7 @@ class PrimaryKeyField(ApiField):
     def hydrate(self, bundle):
         if bundle.request.method == 'PUT':
             return None
-        
+
         return super(PrimaryKeyField, self).hydrate(bundle)
 
 
@@ -103,7 +103,10 @@ class ToOneField(TastyOneField):
             kwargs['hash_key'] = val[self.hashkey_index]
             if resource._meta.table.schema.range_key_name:
                 kwargs['range_key'] = val[self.rangekey_index]
-            
+
+        if not kwargs.get('hash_key', True) or not kwargs.get('range_key', True):
+            return None
+
         try:
             return resource._build_reverse_url(url_name, kwargs=kwargs)
         except NoReverseMatch:
@@ -135,7 +138,7 @@ class StringRangeKeyField(StringMixin, RangeKeyField):
     pass
 
 class DynamoListField(ApiField):
-    
+
     def convert(self, value):
         if value is None:
             return None

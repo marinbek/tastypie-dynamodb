@@ -65,7 +65,9 @@ class DynamoHashResource(Resource):
         kwargs = { 'api_name': self._meta.api_name,
                  'resource_name': self._meta.resource_name }
         if bundle:
-            kwargs['hash_key'] = str(getattr(bundle.obj, self._meta.table.schema.hash_key_name))
+            kwargs['hash_key'] = getattr(bundle.obj, self._meta.table.schema.hash_key_name)
+            if kwargs['hash_key']:
+                kwargs['hash_key'] = str(kwargs['hash_key'])
 
         return kwargs
 
@@ -79,17 +81,17 @@ class DynamoHashResource(Resource):
 
         bundle = self.full_hydrate(bundle)
         item = self._meta.table.new_item(**primary_keys)
-        
+
         #extract our attributes from the bundle
         attrs = bundle.obj.to_dict()
-        
+
         #loop and add the valid values
         for key, val in attrs.items():
             if val is None:
                 continue
-            
+
             item[key] = val
-        
+
         #if there are pks, this is an update, else it's new
         if not primary_keys or force_put:
             item.put()
@@ -98,7 +100,7 @@ class DynamoHashResource(Resource):
 
         #wrap the item and store it for return
         bundle.obj = DynamoObject(item)
-        
+
         return bundle
 
     def obj_update(self, bundle, request=None, **k):
@@ -115,12 +117,12 @@ class DynamoHashResource(Resource):
             item = self._meta.table.get_item(consistent_read=self._meta.consistent_read, **k)
         except DynamoDBKeyNotFoundError:
             raise Http404
-            
+
         return DynamoObject(item)
 
     def obj_delete(self, bundle, **k):
         """Deletes an object in Dynamo"""
-    
+
         item = self._meta.table.new_item(**k)
         item.delete()
 
@@ -158,7 +160,7 @@ class DynamoHashResource(Resource):
                      self._meta.table.schema.hash_key_name]
         else:
             attrs = [self._meta.table.schema.hash_key_name]
-            
+
         dynamo_filter = {}
         for key, val in attr_filter.iteritems():
             dynamo_filter[key] = boto.dynamodb.condition.EQ(val)
@@ -172,7 +174,7 @@ class DynamoHashResource(Resource):
                      self._meta.table.schema.hash_key_name]
         else:
             attrs = [self._meta.table.schema.hash_key_name]
-            
+
         dynamo_filter = {}
         for key, val in attr_filter.iteritems():
             dynamo_filter[key] = boto.dynamodb.condition.EQ(val)
@@ -205,7 +207,7 @@ class DynamoHashResource(Resource):
         # Or filter by kwargs['hash_key'] - this happens when we get a wildcard range key URI request
         hkey = self._meta.table.schema.hash_key_name
         if hkey in request.GET or 'hash_key' in kwargs:
-            hkey_in_next = True 
+            hkey_in_next = True
             value = request.GET.get(hkey, kwargs.get('hash_key', None))
             dynamo_filter[hkey] = boto.dynamodb.condition.EQ(value)
             hash_key_value = request.GET.get(hkey, kwargs.get('hash_key', None))
@@ -288,7 +290,7 @@ class DynamoHashResource(Resource):
         to_be_serialized[self._meta.collection_name] = bundles
         to_be_serialized = self.alter_list_data_to_serialize(request, to_be_serialized)
         return self.create_response(request, to_be_serialized)
-    
+
     def obj_delete_list(self, request=None, **k):
         pass
 
@@ -353,8 +355,10 @@ class DynamoHashRangeResource(DynamoHashResource):
         kwargs = { 'api_name': self._meta.api_name,
                  'resource_name': self._meta.resource_name }
         if bundle:
-            kwargs['hash_key'] = str(getattr(bundle.obj, self._meta.table.schema.hash_key_name))
-            kwargs['range_key'] = str(getattr(bundle.obj, self._meta.table.schema.range_key_name))
-
+            kwargs['hash_key'] = getattr(bundle.obj, self._meta.table.schema.hash_key_name)
+            kwargs['range_key'] = getattr(bundle.obj, self._meta.table.schema.range_key_name)
+            for key in ('hash_key', 'range_key'):
+                if kwargs[key]:
+                    kwargs[key] = str(kwargs[key])
 
         return kwargs
