@@ -101,7 +101,7 @@ class ToOneField(TastyOneField):
         if self.separator:
             val = getattr(bundle.obj, self.attribute).split(self.separator)
             kwargs['hash_key'] = val[self.hashkey_index]
-            if resource._meta.table.schema.range_key_name:
+            if resource._get_range():
                 kwargs['range_key'] = val[self.rangekey_index]
 
         if not kwargs.get('hash_key', True) or not kwargs.get('range_key', True):
