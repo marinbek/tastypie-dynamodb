@@ -83,8 +83,11 @@ class DynamoHashResource(Resource):
         """Ensure that the hash_key is received in the correct type"""
         k['hash_key'] = self._hash_key_type(k['hash_key'])
 
-        if 'range_key' in k and type(k['range_key']) is str and k['range_key'][-1] == '*':
-            return self.get_list(request, **k)
+        if self._get_range():
+            if type(k['range_key']) is unicode and k['range_key'][-1] == '*':
+                # List all, do a query actually instead
+                return self.get_list(request, **k)
+            k['range_key'] = self._range_key_type(k['range_key'])
         return super(DynamoHashResource, self).dispatch_detail(request, **k)
 
     def resource_uri_kwargs(self, bundle):
@@ -396,13 +399,6 @@ class DynamoHashRangeResource(DynamoHashResource):
     def __init__(self, *a, **k):
         super(DynamoHashRangeResource, self).__init__(*a, **k)
         self._range_key_type = int if self._get_range().data_type == 'N' else str
-
-
-    def dispatch_detail(self, request, **k):
-        """Ensure that the range_key is received in the correct type"""
-
-        k['range_key'] = self._range_key_type(k['range_key'])
-        return super(DynamoHashRangeResource, self).dispatch_detail(request, **k)
 
     def prepend_urls(self):
         return [
