@@ -258,6 +258,7 @@ class DynamoHashResource(Resource):
         hash_key_filter = None
 
         hkey = self._get_hash().name
+        rkey = self._get_range().name if self._get_range else None
 
         # Trying to filter by HASH key
         if hkey in get_params or 'hash_key' in kwargs:
@@ -265,6 +266,25 @@ class DynamoHashResource(Resource):
             value = get_params.get(hkey, kwargs.get('hash_key', None))
             hash_key_filter = value
             dynamo_filter[hkey + '__eq'] = value
+
+        # Maybe we are trying to filter using other Tastypie resources
+        # For now we only support filter by tastypie-dynamo ToOneField
+        for param, val in get_params.iteritems():
+            if param in self.fields and type(self.fields[param]) is fields.ToOneField:
+                # This param is really a ToOne relationship
+                keys = self.fields[param].get_dynamo_keys(val)
+
+                if self.fields[param].attribute == hkey and not hash_key_filter:
+                    # model_field of related resource is our hash key
+                    # we can use it then to filter on hash_key if we don't already
+                    hash_key_filter = keys['hash_key'] + (':' + keys['range_key']) if 'range_key' in keys else ''
+                    dynamo_filter[hkey + '__eq'] = hash_key_filter
+
+                #if hkey in keys.keys() and not hash_key_filter:
+                    # One of the keys in relationship is our hashkey
+                #    hash_key_filter = keys[hkey]
+                #    dynamo_filter[hkey + '__eq'] = value
+                #elif rkey and rkey in keys.keys():
 
         # Exclusive start key - when offset is required
         esk = {}

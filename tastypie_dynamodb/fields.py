@@ -1,5 +1,5 @@
 from tastypie.fields import ApiField, ToOneField as TastyOneField, NOT_PROVIDED
-from django.core.urlresolvers import NoReverseMatch
+from django.core.urlresolvers import NoReverseMatch, get_script_prefix, resolve, Resolver404
 from django.utils import importlib
 
 class PrimaryKeyField(ApiField):
@@ -35,7 +35,6 @@ class ToOneDjangoField(TastyOneField):
             unique=unique, help_text=help_text, use_in=use_in,
             full_list=full_list, full_detail=full_detail
         )
-
 
     def dehydrate(self, bundle, for_list=True):
         value = getattr(bundle.obj, self.dynamo_field)
@@ -87,6 +86,28 @@ class ToOneField(TastyOneField):
             full_list=full_list, full_detail=full_detail
         )
 
+    def get_dynamo_keys(self, uri):
+        # find hash and range keys
+        hashkey = rangekey = None
+        for name, field in self.to_class.base_fields.iteritems():
+            if isinstance(field, HashKeyField):
+                hashkey = name
+            elif isinstance(field, RangeKeyField):
+                rangekey = name
+
+        # Get kwargs from uri
+        prefix = get_script_prefix()
+        chomped_uri = uri
+        if prefix and uri.startswith(prefix):
+            uri = uri[len(prefix)-1:]
+        try:
+            view, args, kwargs = resolve(uri)
+        except Resolver404:
+            raise NotFound("The URL provided '%s' was not a link to a valid resource." % uri)
+
+        del kwargs['api_name']
+        del kwargs['resource_name']
+        return kwargs
 
     def dehydrate(self, bundle, for_list=True):
         if self.aliases:
