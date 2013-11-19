@@ -279,12 +279,23 @@ class DynamoHashResource(Resource):
                     # we can use it then to filter on hash_key if we don't already
                     hash_key_filter = keys['hash_key'] + (':' + keys['range_key']) if 'range_key' in keys else ''
                     dynamo_filter[hkey + '__eq'] = hash_key_filter
+                elif keys['hash_key_name'] == hkey and not hash_key_filter:
+                    # hashkey of related object is also our hashkey
+                    hash_key_filter = keys['hash_key']
+                    dynamo_filter[hkey + '__eq'] = hash_key_filter
 
-                #if hkey in keys.keys() and not hash_key_filter:
-                    # One of the keys in relationship is our hashkey
-                #    hash_key_filter = keys[hkey]
-                #    dynamo_filter[hkey + '__eq'] = value
-                #elif rkey and rkey in keys.keys():
+                if keys['range_key_name']:
+                    # Related object has range value
+                    # Check if we also have it as range
+                    if self._get_range() and self._get_range().name == keys['range_key_name']:
+                        dynamo_filter[keys['range_key_name'] + '__eq'] = keys['range_key']
+
+                    # Check if we have it indexed
+                    elif keys['range_key_name'] in self._meta.indexes.values():
+                        for index, key in self._meta.indexes.iteritems():
+                            if key == keys['range_key_name']:
+                                dynamo_filter['index'] = index
+                                dynamo_filter[keys['range_key_name'] + '__eq'] = keys['range_key']
 
         # Exclusive start key - when offset is required
         esk = {}

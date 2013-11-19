@@ -91,9 +91,9 @@ class ToOneField(TastyOneField):
         hashkey = rangekey = None
         for name, field in self.to_class.base_fields.iteritems():
             if isinstance(field, HashKeyField):
-                hashkey = name
+                hashkey = field.attribute
             elif isinstance(field, RangeKeyField):
-                rangekey = name
+                rangekey = field.attribute
 
         # Get kwargs from uri
         prefix = get_script_prefix()
@@ -107,6 +107,10 @@ class ToOneField(TastyOneField):
 
         del kwargs['api_name']
         del kwargs['resource_name']
+        # kwargs now contains hash_key and range_key (if applicable)
+        kwargs['hash_key_name'] = self.aliases.get(hashkey, hashkey)
+        kwargs['range_key_name'] = self.aliases.get(rangekey, rangekey)
+
         return kwargs
 
     def dehydrate(self, bundle, for_list=True):
