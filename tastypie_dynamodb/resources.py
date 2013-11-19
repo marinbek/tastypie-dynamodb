@@ -315,11 +315,9 @@ class DynamoHashResource(Resource):
                             break
                     dynamo_filter['index'] = index_name
 
-            print 'Querying by', dynamo_filter
             _items = self._meta.table.query(limit=limit,
                                             **dynamo_filter)
         else:
-            print 'Scanning by', dynamo_filter
             _items = self._meta.table.scan(limit=limit,
                                            **dynamo_filter)
 
