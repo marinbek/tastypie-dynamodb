@@ -244,6 +244,13 @@ class DynamoHashResource(Resource):
 
     def get_list(self, request, **kwargs):
 
+        # Copy request.GET parameters and make all keys lowercase
+        get_params = request.GET.dict().copy()
+        for key in get_params.keys():
+            if key.lower() != key:
+                item = get_params.pop(key)
+                get_params[key.lower()] = item
+
         dynamo_filter = {}
 
         # should we add hash_key filter to NEXT URL
@@ -253,45 +260,46 @@ class DynamoHashResource(Resource):
         hkey = self._get_hash().name
 
         # Trying to filter by HASH key
-        if hkey in request.GET or 'hash_key' in kwargs:
+        if hkey in get_params or 'hash_key' in kwargs:
             hkey_in_next = True
-            value = request.GET.get(hkey, kwargs.get('hash_key', None))
+            value = get_params.get(hkey, kwargs.get('hash_key', None))
             hash_key_filter = value
             dynamo_filter[hkey + '__eq'] = value
 
         # Exclusive start key - when offset is required
         esk = {}
-        if 'offset_hash' in request.GET:
-            hash_offset = request.GET['offset_hash']
+        if 'offset_hash' in get_params:
+            hash_offset = get_params['offset_hash']
             if self._get_hash().data_type == 'N':
                 hash_offset = int(hash_offset)
-            esk[self._get_hash().name] = request.GET['offset_hash']
+            esk[self._get_hash().name] = get_params['offset_hash']
 
         # We are dealing with a range table!
         if self._get_range():
             # Exclusive start key
-            if 'offset_hash' in request.GET and 'offset_range' in request.GET:
-                range_offset = request.GET['offset_range']
+            if 'offset_hash' in get_params and 'offset_range' in get_params:
+                range_offset = get_params['offset_range']
                 if self._get_range().data_type == 'N':
                     range_offset = int(range_offset)
                 esk[self._get_range().name] = range_offset
 
             # Filtering by range key
             rkey = self._get_range().name
-            if rkey in request.GET or 'range_key' in kwargs:
-                value = request.GET.get(rkey, kwargs['range_key'])
+            if rkey in get_params or 'range_key' in kwargs:
+                value = get_params.get(rkey, kwargs['range_key'])
                 if value != '*':
                     if value[-1] == '*':
                         # wildcard filer, we need begins_with
                         dynamo_filter[rkey + '__beginswith'] = value[:-1]
                     else:
+                        # Booleans are actually integers in dynamo so we convert here
                         if type(value) is unicode and value.lower() in ('true', 'false'):
                             value = 0 if value.lower() == 'false' else 1
                         if self._get_range().data_type == 'N':
                             value = int(value)
                         dynamo_filter[rkey + '__eq'] = value
 
-        limit = 20 if 'limit' not in request.GET else int(request.GET['limit'])
+        limit = 20 if 'limit' not in get_params else int(get_params['limit'])
 
         if esk:
             dynamo_filter['exclusive_start_key'] = esk
@@ -299,12 +307,29 @@ class DynamoHashResource(Resource):
         # Are we trying to filter?
         if hash_key_filter:
 
-            # Check if trying to filter by indexed key
-            selected_indexes = set(request.GET.keys()).intersection(set(self._meta.indexes.values()))
+            # Check if __between is trying to be performed
+            for from_param in filter(lambda param: '__from' in param, get_params.keys()):
+                param = from_param[:from_param.find('__from')]
+                if get_params.get(param + '__to', None):
+                    # There is also param__to parameter, we can do __between
+                    try:
+                        param_from = int(get_params[param + '__from'])
+                        param_to = int(get_params[param + '__to'])
+                        dynamo_filter[param + '__between'] = [param_from, param_to]
 
+                        if param != self._get_range().name:
+                            # This is not a range key filtering, try to find an index
+                            for index, key in self._meta.indexes.iteritems():
+                                if key == param:
+                                    dynamo_filter['index'] = index
+                    except:
+                        print 'Failed to create __between filter'
+
+            # Check if trying to filter by indexed key
+            selected_indexes = set(get_params.keys()).intersection(set(self._meta.indexes.values()))
             if selected_indexes:
                 for index_field in selected_indexes:
-                    val = request.GET[index_field]
+                    val = get_params[index_field]
                     # TODO there is a bug in boto saying that index field is STRING
                     # when it is actually a NUMBER. Try to find a solution for this
                     if type(val) is unicode and val.lower() in ('true', 'false'):
@@ -323,7 +348,7 @@ class DynamoHashResource(Resource):
 
         items = [it for it in _items]
 
-        paginator = self._meta.paginator_class(request.GET, items, resource_uri=self.get_resource_uri(), limit=self._meta.limit, max_limit=self._meta.max_limit,
+        paginator = self._meta.paginator_class(get_params, items, resource_uri=self.get_resource_uri(), limit=self._meta.limit, max_limit=self._meta.max_limit,
                         collection_name=self._meta.collection_name)
         to_be_serialized = paginator.page()
 
@@ -346,10 +371,10 @@ class DynamoHashResource(Resource):
             if self._get_range():
                 next_uri += '&offset_range=%s' % _items._last_key_seen[self._get_range().name]
 
-            if 'limit' in request.GET:
-                next_uri += '&limit=%s' % request.GET['limit']
-            if 'format' in request.GET:
-                next_uri += '&format=%s' % request.GET['format']
+            if 'limit' in get_params:
+                next_uri += '&limit=%s' % get_params['limit']
+            if 'format' in get_params:
+                next_uri += '&format=%s' % get_params['format']
 
         to_be_serialized['meta']['next'] = next_uri
 
