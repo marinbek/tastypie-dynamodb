@@ -248,16 +248,15 @@ class DynamoHashResource(Resource):
 
         # should we add hash_key filter to NEXT URL
         hkey_in_next = False
-        hash_key_value = None
+        hash_key_filter = None
 
-        # Try to filter by hash_key, if provided
-        # Or filter by kwargs['hash_key'] - this happens when we get a wildcard range key URI request
         hkey = self._get_hash().name
 
+        # Trying to filter by HASH key
         if hkey in request.GET or 'hash_key' in kwargs:
             hkey_in_next = True
             value = request.GET.get(hkey, kwargs.get('hash_key', None))
-            hash_key_value = value
+            hash_key_filter = value
             dynamo_filter[hkey + '__eq'] = value
 
         # Exclusive start key - when offset is required
@@ -268,15 +267,16 @@ class DynamoHashResource(Resource):
                 hash_offset = int(hash_offset)
             esk[self._get_hash().name] = request.GET['offset_hash']
 
+        # We are dealing with a range table!
         if self._get_range():
-            # We are dealing with a range table!
+            # Exclusive start key
             if 'offset_hash' in request.GET and 'offset_range' in request.GET:
                 range_offset = request.GET['offset_range']
                 if self._get_range().data_type == 'N':
                     range_offset = int(range_offset)
                 esk[self._get_range().name] = range_offset
 
-            # a 'range' table, let's try filtering
+            # Filtering by range key
             rkey = self._get_range().name
             if rkey in request.GET or 'range_key' in kwargs:
                 value = request.GET.get(rkey, kwargs['range_key'])
@@ -285,6 +285,10 @@ class DynamoHashResource(Resource):
                         # wildcard filer, we need begins_with
                         dynamo_filter[rkey + '__beginswith'] = value[:-1]
                     else:
+                        if type(value) is unicode and value.lower() in ('true', 'false'):
+                            value = 0 if value.lower() == 'false' else 1
+                        if self._get_range().data_type == 'N':
+                            value = int(value)
                         dynamo_filter[rkey + '__eq'] = value
 
         limit = 20 if 'limit' not in request.GET else int(request.GET['limit'])
@@ -292,9 +296,10 @@ class DynamoHashResource(Resource):
         if esk:
             dynamo_filter['exclusive_start_key'] = esk
 
-        if hash_key_value:
-            # do a query, we have hash key filter
+        # Are we trying to filter?
+        if hash_key_filter:
 
+            # Check if trying to filter by indexed key
             selected_indexes = set(request.GET.keys()).intersection(set(self._meta.indexes.values()))
 
             if selected_indexes:
@@ -310,9 +315,11 @@ class DynamoHashResource(Resource):
                             break
                     dynamo_filter['index'] = index_name
 
+            print 'Querying by', dynamo_filter
             _items = self._meta.table.query(limit=limit,
                                             **dynamo_filter)
         else:
+            print 'Scanning by', dynamo_filter
             _items = self._meta.table.scan(limit=limit,
                                            **dynamo_filter)
 
@@ -336,7 +343,7 @@ class DynamoHashResource(Resource):
 
             # append hash_key filter to NEXT URL if necessary
             if hkey_in_next:
-                next_uri += '&%s=%s' % (hkey, hash_key_value)
+                next_uri += '&%s=%s' % (hkey, hash_key_filter)
 
             if self._get_range():
                 next_uri += '&offset_range=%s' % _items._last_key_seen[self._get_range().name]
