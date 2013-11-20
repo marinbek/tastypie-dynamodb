@@ -297,9 +297,13 @@ class DynamoHashResource(Resource):
                                 dynamo_filter['index'] = index
                                 dynamo_filter[keys['range_key_name'] + '__eq'] = keys['range_key']
 
+        # Do we have a special case of offset, when we do extra filtering?
+        offset_special = int(get_params.get('offset_special', 0)) == 1
+        offset_range = int(get_params.get('offset_range', 0))
+
         # Exclusive start key - when offset is required
         esk = {}
-        if 'offset_hash' in get_params:
+        if not offset_special and 'offset_hash' in get_params:
             hash_offset = get_params['offset_hash']
             if self._get_hash().data_type == 'N':
                 hash_offset = int(hash_offset)
@@ -308,7 +312,7 @@ class DynamoHashResource(Resource):
         # We are dealing with a range table!
         if self._get_range():
             # Exclusive start key
-            if 'offset_hash' in get_params and 'offset_range' in get_params:
+            if not offset_special and 'offset_hash' in get_params and 'offset_range' in get_params:
                 range_offset = get_params['offset_range']
                 if self._get_range().data_type == 'N':
                     range_offset = int(range_offset)
@@ -376,10 +380,22 @@ class DynamoHashResource(Resource):
 
         # If there are more than 2 conditions, we need to scan, not query
         force_scan = False
+        query_filter = None
+        real_limit = 0
         if (len(dynamo_filter) - 1 if 'index' in dynamo_filter else 0) > 2:
-            force_scan = True
-            if 'index' in dynamo_filter:
-                del dynamo_filter['index']
+            # Check if we can
+            if ('%s__between' % rkey) in dynamo_filter and 'index' in dynamo_filter:
+                # Timestamp is being filtered, and we have a filter
+                query_filter = dynamo_filter['%s__between' % rkey]
+                del dynamo_filter['%s__between' % rkey]
+                real_limit = limit
+                limit = None  # Get all results, not just 20
+                print 'New dynamo_filter', dynamo_filter
+                print 'query_filter', query_filter
+            else:
+                force_scan = True
+                if 'index' in dynamo_filter:
+                    del dynamo_filter['index']
 
         if force_scan or not hash_key_filter:
             print 'scanning with filter', dynamo_filter
@@ -390,7 +406,30 @@ class DynamoHashResource(Resource):
             _items = self._meta.table.query(limit=limit,
                                             **dynamo_filter)
 
-        items = [it for it in _items]
+        if query_filter:
+            # We need to filter items on the fly as well
+            __items = []
+            for it in _items:
+                val = int(it[rkey])
+                if val > offset_range and val >= query_filter[0] and val <= query_filter[1]:
+                    __items.append(it)
+
+            from operator import itemgetter, attrgetter
+            items = sorted(__items, key=itemgetter('ts'))
+
+            if len(items) > real_limit:
+                items = items[:real_limit]
+                query_filter = {}
+                query_filter[index_field] = dynamo_filter[index_field + '__eq']
+                query_filter[rkey + '__from'] = get_params[rkey + '__from']
+                query_filter[rkey + '__to'] = get_params[rkey + '__to']
+                query_filter['offset_range'] = int(items[-1]['ts'])
+            else:
+                query_filter = None
+
+        else:
+            # Normal data
+            items = [it for it in _items]
 
         paginator = self._meta.paginator_class(get_params, items, resource_uri=self.get_resource_uri(), limit=self._meta.limit, max_limit=self._meta.max_limit,
                         collection_name=self._meta.collection_name)
@@ -403,20 +442,31 @@ class DynamoHashResource(Resource):
             bundles.append(self.full_dehydrate(bundle))
 
         # generate 'next' URI using _last_key_seen
-        if not _items._last_key_seen:
+        if not _items._last_key_seen and not query_filter:
             next_uri = None
         else:
-            next_uri = '/api/%s/%s/?offset_hash=%s' % (kwargs['api_name'], kwargs['resource_name'], _items._last_key_seen[self._get_hash().name])
+            if query_filter:
+                last_hash_key = dynamo_filter[hkey + '__eq']
+            else:
+                last_hash_key = _items._last_key_seen[self._get_hash().name]
+
+            next_uri = '/api/%s/%s/?offset_hash=%s' % (kwargs['api_name'], kwargs['resource_name'], last_hash_key )
 
             # append hash_key filter to NEXT URL if necessary
             if hkey_in_next:
                 next_uri += '&%s=%s' % (hkey, hash_key_filter)
 
-            if self._get_range():
-                next_uri += '&offset_range=%s' % _items._last_key_seen[self._get_range().name]
+            if query_filter:
+                # We need a special case of "next" because of extra filtering
+                next_uri += '&offset_special=1'
+                for key, val in query_filter.iteritems():
+                    next_uri += '&%s=%s' % (key, val)
+            else:
+                if hkey:
+                    next_uri += '&offset_range=%s' % _items._last_key_seen[hkey]
+                if 'limit' in get_params:
+                    next_uri += '&limit=%s' % get_params['limit']
 
-            if 'limit' in get_params:
-                next_uri += '&limit=%s' % get_params['limit']
             if 'format' in get_params:
                 next_uri += '&format=%s' % get_params['format']
 
