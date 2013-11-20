@@ -353,6 +353,7 @@ class DynamoHashResource(Resource):
                             for index, key in self._meta.indexes.iteritems():
                                 if key == param:
                                     dynamo_filter['index'] = index
+                                    break
                     except:
                         print 'Failed to create __between filter'
 
@@ -366,16 +367,28 @@ class DynamoHashResource(Resource):
                     if type(val) is unicode and val.lower() in ('true', 'false'):
                         val = 0 if val.lower() == 'false' else 1
                     dynamo_filter[index_field + '__eq'] = val
+
+                    # If we are forcing a scan already, we don't need index
                     for index_name, val in self._meta.indexes.iteritems():
                         if val == index_field:
+                            dynamo_filter['index'] = index_name
                             break
-                    dynamo_filter['index'] = index_name
 
-            _items = self._meta.table.query(limit=limit,
-                                            **dynamo_filter)
-        else:
+        # If there are more than 2 conditions, we need to scan, not query
+        force_scan = False
+        if (len(dynamo_filter) - 1 if 'index' in dynamo_filter else 0) > 2:
+            force_scan = True
+            if 'index' in dynamo_filter:
+                del dynamo_filter['index']
+
+        if force_scan or not hash_key_filter:
+            print 'scanning with filter', dynamo_filter
             _items = self._meta.table.scan(limit=limit,
                                            **dynamo_filter)
+        else:
+            print 'querying with filter', dynamo_filter
+            _items = self._meta.table.query(limit=limit,
+                                            **dynamo_filter)
 
         items = [it for it in _items]
 
