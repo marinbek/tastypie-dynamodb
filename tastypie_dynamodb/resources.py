@@ -299,7 +299,11 @@ class DynamoHashResource(Resource):
 
         # Do we have a special case of offset, when we do extra filtering?
         offset_special = int(get_params.get('offset_special', 0)) == 1
-        offset_range = int(get_params.get('offset_range', 0))
+
+        try:
+            offset_range = int(get_params.get('offset_range', 0))
+        except:
+            offset_range = 0
 
         # Exclusive start key - when offset is required
         esk = {}
