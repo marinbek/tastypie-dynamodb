@@ -467,7 +467,7 @@ class DynamoHashResource(Resource):
                     next_uri += '&%s=%s' % (key, val)
             else:
                 if hkey:
-                    next_uri += '&offset_range=%s' % _items._last_key_seen[hkey]
+                    next_uri += '&offset_range=%s' % _items._last_key_seen[rkey]
                 if 'limit' in get_params:
                     next_uri += '&limit=%s' % get_params['limit']
 
