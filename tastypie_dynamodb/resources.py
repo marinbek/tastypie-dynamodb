@@ -418,12 +418,15 @@ class DynamoHashResource(Resource):
                     del dynamo_filter['index']
 
         if force_scan or not hash_key_filter:
-            print 'scanning with filter', dynamo_filter
+            print 'scanning with filter', dynamo_filter, 'and limit', limit
             _items = self._meta.table.scan(limit=limit,
                                            **dynamo_filter)
         else:
-            print 'querying with filter', dynamo_filter
+            print 'querying with filter', dynamo_filter, 'and limit', limit
+            # There is a bug in boto, where it sets scan_index_forward=reverse
+            # but it should be other way around
             _items = self._meta.table.query(limit=limit,
+                                            reverse=True,
                                             **dynamo_filter)
 
         if query_filter:
