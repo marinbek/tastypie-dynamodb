@@ -112,6 +112,22 @@ class DynamoHashResource(Resource):
             filt[self._get_range().name] = kwargs['range_key']
         return filt
 
+    def full_hydrate(self, bundle):
+        bundle = super(DynamoHashResource, self).full_hydrate(bundle)
+
+        for field_name, field_object in self.fields.items():
+            if field_object.readonly is True:
+                continue
+            value = getattr(bundle.obj, field_object.attribute, None)
+            if not value and field_object.has_default():
+                if callable(field_object._default):
+                    value = field_object._default()
+                else:
+                    value = field_object._default
+                print field_name, value
+                setattr(bundle.obj, field_object.attribute, value)
+        return bundle
+
     def _dynamo_update_or_insert(self, bundle, primary_keys=None, force_put=False):
         bundle = self.full_hydrate(bundle)
 
