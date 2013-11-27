@@ -486,6 +486,8 @@ class DynamoHashResource(Resource):
             if hkey_in_next:
                 next_uri += '&%s=%s' % (hkey, hash_key_filter)
 
+            next_uri += '&reverse=%s' % str(not order_asc).lower()
+
             if query_filter:
                 # We need a special case of "next" because of extra filtering
                 next_uri += '&offset_special=1'
