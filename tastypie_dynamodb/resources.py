@@ -124,7 +124,6 @@ class DynamoHashResource(Resource):
                     value = field_object._default()
                 else:
                     value = field_object._default
-                print field_name, value
                 setattr(bundle.obj, field_object.attribute, value)
         return bundle
 
@@ -266,6 +265,14 @@ class DynamoHashResource(Resource):
             if key.lower() != key:
                 item = get_params.pop(key)
                 get_params[key.lower()] = item
+
+        for key, val in get_params.iteritems():
+            if val.lower() in ('true', 'false'):
+                get_params[key] = eval(val.title())
+
+        # order_asc is later used to determine if we want to
+        # reverse the order of range_keys/secondary index
+        order_asc = not get_params.pop('reverse', False)
 
         dynamo_filter = {}
 
@@ -426,7 +433,7 @@ class DynamoHashResource(Resource):
             # There is a bug in boto, where it sets scan_index_forward=reverse
             # but it should be other way around
             _items = self._meta.table.query(limit=limit,
-                                            reverse=True,
+                                            reverse=order_asc,
                                             **dynamo_filter)
 
         if query_filter:
