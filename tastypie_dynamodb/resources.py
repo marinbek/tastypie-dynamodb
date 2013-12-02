@@ -1,4 +1,5 @@
 import copy
+import itertools
 from django.conf.urls import url
 from django.http import Http404
 
@@ -65,9 +66,18 @@ class DynamoHashResource(Resource):
 
         # Get list of all indexed fields
         self._meta.indexes = {}
+        # Each member of 'indexes' is a tuple in format:
+        #   (dynamo indexed field, field name in tastypie resource)
+        # where 'field name in tastypie resource' is used for the possibility that
+        # tastypie represents some value differently
         for index in self._meta.table.indexes:
             # Get all indexes and then find RANGE in there
-            self._meta.indexes[index.name] = filter(lambda part: part.attr_type=='RANGE', index.parts)[0].name
+            indexed_field = filter(lambda part: part.attr_type=='RANGE', index.parts)[0].name
+
+            res_fields = filter(lambda f: f.attribute == indexed_field, self.fields.values())
+            mapped_field = res_fields[0].instance_name if res_fields else None
+
+            self._meta.indexes[index.name] = (indexed_field, mapped_field)
 
     def _get_hash(self):
         tmp = filter(lambda field: field.attr_type == 'HASH', self.table_schema)
@@ -314,11 +324,11 @@ class DynamoHashResource(Resource):
                         dynamo_filter[keys['range_key_name'] + '__eq'] = keys['range_key']
 
                     # Check if we have it indexed
-                    elif keys['range_key_name'] in self._meta.indexes.values():
-                        for index, key in self._meta.indexes.iteritems():
-                            if key == keys['range_key_name']:
-                                dynamo_filter['index'] = index
-                                dynamo_filter[keys['range_key_name'] + '__eq'] = keys['range_key']
+                    else:
+                        for index_name, _fields in self._meta.indexes.iteritems():
+                            if keys['range_key_name'] in _fields:
+                                dynamo_filter['index'] = index_name
+                                dynamo_filter[_fields[0] + '__eq'] = keys['range_key']
 
         # Do we have a special case of offset, when we do extra filtering?
         offset_special = int(get_params.get('offset_special', 0)) == 1
@@ -381,15 +391,16 @@ class DynamoHashResource(Resource):
 
                         if param != self._get_range().name:
                             # This is not a range key filtering, try to find an index
-                            for index, key in self._meta.indexes.iteritems():
-                                if key == param:
+                            for index, _fields in self._meta.indexes.iteritems():
+                                if param in _fields:
                                     dynamo_filter['index'] = index
                                     break
                     except:
                         print 'Failed to create __between filter'
 
             # Check if trying to filter by indexed key
-            selected_indexes = set(get_params.keys()).intersection(set(self._meta.indexes.values()))
+            all_fields = set(itertools.chain(*self._meta.indexes.values()))
+            selected_indexes = set(get_params.keys()).intersection(all_fields)
             if selected_indexes:
                 for index_field in selected_indexes:
                     val = get_params[index_field]
@@ -397,12 +408,13 @@ class DynamoHashResource(Resource):
                     # when it is actually a NUMBER. Try to find a solution for this
                     if type(val) is unicode and val.lower() in ('true', 'false'):
                         val = 0 if val.lower() == 'false' else 1
-                    dynamo_filter[index_field + '__eq'] = val
 
                     # If we are forcing a scan already, we don't need index
-                    for index_name, val in self._meta.indexes.iteritems():
-                        if val == index_field:
+                    for index_name, _fields in self._meta.indexes.iteritems():
+                        if index_field in _fields:
+                            val = self.fields[_fields[1]].convert(val)
                             dynamo_filter['index'] = index_name
+                            dynamo_filter[_fields[0] + '__eq'] = val
                             break
 
         # If there are more than 2 conditions, we need to scan, not query
