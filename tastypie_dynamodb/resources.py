@@ -292,6 +292,10 @@ class DynamoHashResource(Resource):
 
         hkey = self._get_hash().name
         rkey = self._get_range().name if self._get_range else None
+        if rkey and self._get_range().data_type == 'N':
+            rkey_type = int
+        else:
+            rkey_type = str
 
         # Trying to filter by HASH key
         if hkey in get_params or 'hash_key' in kwargs:
@@ -393,6 +397,8 @@ class DynamoHashResource(Resource):
                             # This is not a range key filtering, try to find an index
                             for index, _fields in self._meta.indexes.iteritems():
                                 if param in _fields:
+                                    del dynamo_filter[param + '__between']
+                                    dynamo_filter[_fields[0] + '__between'] = [param_from, param_to]
                                     dynamo_filter['index'] = index
                                     break
                     except:
@@ -447,6 +453,17 @@ class DynamoHashResource(Resource):
             _items = self._meta.table.query(limit=limit,
                                             reverse=order_asc,
                                             **dynamo_filter)
+
+        keys_only_index = False
+        if not force_scan and 'index' in dynamo_filter:
+            # Is this an indexed scan of keys_only index?
+            index_obj = filter(lambda ind: ind.name == dynamo_filter['index'], self._meta.table.indexes)[0]
+            keys_only_index = index_obj.projection_type == 'KEYS_ONLY'
+
+        if keys_only_index:
+            # We need to batch-get actual items...
+            req = [{hkey: it[hkey], rkey: rkey_type(it[rkey])} for it in _items]
+            _items = self._meta.table.batch_get(keys=req)
 
         if query_filter:
             # We need to filter items on the fly as well
