@@ -1,3 +1,4 @@
+from operator import itemgetter, attrgetter
 import copy
 import itertools
 from django.conf.urls import url
@@ -473,7 +474,6 @@ class DynamoHashResource(Resource):
                 if val > offset_range and val >= query_filter[0] and val <= query_filter[1]:
                     __items.append(it)
 
-            from operator import itemgetter, attrgetter
             items = sorted(__items, key=itemgetter('ts'))
 
             if len(items) > real_limit:
@@ -489,6 +489,9 @@ class DynamoHashResource(Resource):
         else:
             # Normal data
             items = [it for it in _items]
+
+        if rkey:
+            items.sort(key=lambda it: it[rkey], reverse=not order_asc)
 
         paginator = self._meta.paginator_class(get_params, items, resource_uri=self.get_resource_uri(), limit=self._meta.limit, max_limit=self._meta.max_limit,
                         collection_name=self._meta.collection_name)
