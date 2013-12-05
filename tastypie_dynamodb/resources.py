@@ -461,10 +461,11 @@ class DynamoHashResource(Resource):
             index_obj = filter(lambda ind: ind.name == dynamo_filter['index'], self._meta.table.indexes)[0]
             keys_only_index = index_obj.projection_type == 'KEYS_ONLY'
 
-        if keys_only_index and len(_items._results) > 0:
+        if keys_only_index:
             # We need to batch-get actual items...
             req = [{hkey: it[hkey], rkey: rkey_type(it[rkey])} for it in _items]
-            _items = self._meta.table.batch_get(keys=req)
+            if req:
+                _items = self._meta.table.batch_get(keys=req)
 
         if query_filter:
             # We need to filter items on the fly as well
