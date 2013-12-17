@@ -139,6 +139,7 @@ class DynamoHashResource(Resource):
         return bundle
 
     def _dynamo_update_or_insert(self, bundle, primary_keys=None, force_put=False):
+
         bundle = self.full_hydrate(bundle)
 
         if primary_keys:
@@ -381,6 +382,7 @@ class DynamoHashResource(Resource):
         if esk:
             dynamo_filter['exclusive_start_key'] = esk
 
+        index_range_field = None
         # Are we trying to filter?
         if hash_key_filter:
 
@@ -422,12 +424,14 @@ class DynamoHashResource(Resource):
                             val = self.fields[_fields[1]].convert(val)
                             dynamo_filter['index'] = index_name
                             dynamo_filter[_fields[0] + '__eq'] = val
+                            index_range_field = _fields[0]
                             break
 
         # If there are more than 2 conditions, we need to scan, not query
+        cutoff_ts = False
         force_scan = False
         query_filter = None
-        real_limit = 0
+        real_limit = limit
         if (len(dynamo_filter) - 1 if 'index' in dynamo_filter else 0) > 2:
             # Check if we can
             if ('%s__between' % rkey) in dynamo_filter and 'index' in dynamo_filter:
@@ -448,6 +452,15 @@ class DynamoHashResource(Resource):
             _items = self._meta.table.scan(limit=limit,
                                            **dynamo_filter)
         else:
+            if rkey and 'index' in dynamo_filter and 'ts__between' not in dynamo_filter and not query_filter and rkey == 'ts':
+                # We are querying by some index which is not range key
+                # So we need to get _all_ data resulting for this query, sort it
+                # and then cut it...
+                limit = None
+                query_filter = (0, 1999999999999)
+                offset_range = 1999999999999
+                cutoff_ts = True
+
             print 'querying with filter', dynamo_filter, 'and limit', limit
             # There is a bug in boto, where it sets scan_index_forward=reverse
             # but it should be other way around
@@ -468,21 +481,32 @@ class DynamoHashResource(Resource):
                 _items = self._meta.table.batch_get(keys=req)
 
         if query_filter:
+            print 'Got a query filter:', query_filter
             # We need to filter items on the fly as well
             __items = []
             for it in _items:
                 val = int(it[rkey])
-                if val > offset_range and val >= query_filter[0] and val <= query_filter[1]:
+                first_filter = val > offset_range if order_asc else val < offset_range
+                if first_filter and val >= query_filter[0] and val <= query_filter[1]:
                     __items.append(it)
 
-            items = sorted(__items, key=itemgetter('ts'))
+            items = sorted(__items, key=itemgetter('ts'), reverse=not order_asc)
 
             if len(items) > real_limit:
                 items = items[:real_limit]
                 query_filter = {}
-                query_filter[index_field] = dynamo_filter[index_field + '__eq']
-                query_filter[rkey + '__from'] = get_params[rkey + '__from']
-                query_filter[rkey + '__to'] = get_params[rkey + '__to']
+                query_filter[index_field] = dynamo_filter[index_range_field + '__eq']
+                if cutoff_ts:
+                    if order_asc:
+                        query_filter[rkey + '__from'] = int(items[-1]['ts'])
+                        query_filter[rkey + '__to'] = 1999999999999
+                    else:
+                        query_filter[rkey + '__from'] = 0
+                        query_filter[rkey + '__to'] = int(items[-1]['ts'])
+                else:
+                    query_filter[rkey + '__from'] = get_params[rkey + '__from']
+                    query_filter[rkey + '__to'] = get_params[rkey + '__to']
+
                 query_filter['offset_range'] = int(items[-1]['ts'])
             else:
                 query_filter = None
@@ -494,7 +518,9 @@ class DynamoHashResource(Resource):
         if rkey:
             items.sort(key=lambda it: it[rkey], reverse=not order_asc)
 
-        paginator = self._meta.paginator_class(get_params, items, resource_uri=self.get_resource_uri(), limit=self._meta.limit, max_limit=self._meta.max_limit,
+        items = items[:real_limit]
+
+        paginator = self._meta.paginator_class(get_params, items, resource_uri=self.get_resource_uri(), limit=real_limit, max_limit=self._meta.max_limit,
                         collection_name=self._meta.collection_name)
         to_be_serialized = paginator.page()
 
