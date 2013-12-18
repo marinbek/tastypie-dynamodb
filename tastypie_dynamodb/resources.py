@@ -458,7 +458,7 @@ class DynamoHashResource(Resource):
                 # and then cut it...
                 limit = None
                 query_filter = (0, 1999999999999)
-                offset_range = 1999999999999
+                offset_range = 0 if order_asc else 1999999999999
                 cutoff_ts = True
 
             print 'querying with filter', dynamo_filter, 'and limit', limit
