@@ -423,7 +423,11 @@ class DynamoHashResource(Resource):
                         if index_field in _fields:
                             val = self.fields[_fields[1]].convert(val)
                             dynamo_filter['index'] = index_name
-                            dynamo_filter[_fields[0] + '__eq'] = val
+                            if val[-1] == '*':
+                                # wildcard filer, we need begins_with
+                                dynamo_filter[_fields[0] + '__beginswith'] = val[:-1]
+                            else:
+                                dynamo_filter[_fields[0] + '__eq'] = val
                             index_range_field = _fields[0]
                             break
 
