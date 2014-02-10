@@ -293,7 +293,7 @@ class DynamoHashResource(Resource):
         hash_key_filter = None
 
         hkey = self._get_hash().name
-        rkey = self._get_range().name if self._get_range else None
+        rkey = self._get_range().name if self._get_range() else None
         if rkey and self._get_range().data_type == 'N':
             rkey_type = int
         else:
