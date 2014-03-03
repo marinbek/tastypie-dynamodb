@@ -421,7 +421,10 @@ class DynamoHashResource(Resource):
                     # If we are forcing a scan already, we don't need index
                     for index_name, _fields in self._meta.indexes.iteritems():
                         if index_field in _fields:
-                            val = self.fields[_fields[1]].convert(val)
+                            try:
+                                val = self.fields[_fields[1]].convert(val)
+                            except ValueError:
+                                continue
                             dynamo_filter['index'] = index_name
                             if type(val) in (unicode, str,) and val[-1] == '*':
                                 # wildcard filer, we need begins_with
