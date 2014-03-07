@@ -502,7 +502,8 @@ class DynamoHashResource(Resource):
             if len(items) > real_limit:
                 items = items[:real_limit]
                 query_filter = {}
-                query_filter[index_field] = dynamo_filter[index_range_field + '__eq']
+                _rfield = filter(lambda k: k.find(index_range_field + '__') == 0, dynamo_filter.keys())[0]
+                query_filter[index_field] = dynamo_filter[_rfield]
                 if cutoff_ts:
                     if order_asc:
                         query_filter[rkey + '__from'] = int(items[-1]['ts'])
