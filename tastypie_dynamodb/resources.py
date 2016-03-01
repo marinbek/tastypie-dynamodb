@@ -9,6 +9,7 @@ from django.core.exceptions import MultipleObjectsReturned
 from tastypie import http
 from tastypie.utils import dict_strip_unicode_keys
 import boto.dynamodb2
+from boto.dynamodb2.exceptions import ItemNotFound
 
 from tastypie.resources import DeclarativeMetaclass, Resource
 from tastypie_dynamodb.objects import DynamoObject
@@ -189,9 +190,13 @@ class DynamoHashResource(Resource):
     def obj_get(self, bundle, request=None, **k):
         """Gets an object in Dynamo"""
         filt = self.get_dynamo_filter(k)
-        item = self._meta.table.get_item(consistent=self._meta.consistent_read, **filt)
+        try:
+            item = self._meta.table.get_item(consistent=self._meta.consistent_read, **filt)
+        except (ItemNotFound):
+            raise Http404("Item not found!")
+
         if not item.values():
-            raise Http404
+            raise Http404()
         return DynamoObject(item)
 
     def obj_delete(self, bundle, **k):
